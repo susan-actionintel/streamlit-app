@@ -1,6 +1,4 @@
-# %%
-# use source .venv/bin/activate 
-#Import packages
+# %% Import packages
 import streamlit as st
 import pandas as pd
 import numpy as np
