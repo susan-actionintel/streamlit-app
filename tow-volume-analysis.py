@@ -19,7 +19,7 @@ aws_access_key_id = st.secrets['access_key']
 aws_secret_access_key = st.secrets['secret_key']
 input_filename = 'RawAISDashboardData_current.csv'
 output_filename = 'tow_key_locs_data'+pd.Timestamp.today().now().strftime('%Y-%m-%d')+'.csv'
-river_stages_file = 'RiverStages.csv'
+river_stages_file = 'RiverStages_AllLowerMS.csv'
 tow_benchmark_file = 'trip_data_Vicksburg_2023-08-22_1326.csv'
 logo_file = 'Original Logo.png'
 cache_time_to_live = 3600 # caching time to live in seconds for tow data call 
@@ -29,12 +29,13 @@ owner_type_dict = {'main line grain tows':['ACBL','ARTCO','INGRAM','MARQUETTE','
                    'liquids tows':['BLESSEY','ENTERPRISE MARINE','GENESIS MARINE','GOLDING','KIRBY','LEBEOUF BROS.'\
                               'MAGNOLIA MARINE','MARATHON PETROLEUM']}
 tow_min_hp_dict = {'main line grain tows': 6500, 'liquids tows': 1000, 'all tows': 1000}
-collapsable_note_dict = {'main line grain tows': ('Includes tows over '+str(tow_min_hp_dict['main line grain tows']) +'hp from these companies as a proxy: '+\
+collapsable_note_dict = {'main line grain tows': ('Includes tows over '+str(tow_min_hp_dict['main line grain tows']) +'hp from these companies as a proxy:  \n\n'+\
                                                     (', '.join(owner_type_dict['main line grain tows']))),
-                        'liquids tows': ('Includes tows over '+str(tow_min_hp_dict['liquids tows']) +'hp from these companies as a proxy: '+\
+                        'liquids tows': ('Includes tows over '+str(tow_min_hp_dict['liquids tows']) +'hp from these companies as a proxy: \n\n'+\
                                                     (', '.join(owner_type_dict['liquids tows']))),
                         'all tows': ('Includes all tows over '+str(tow_min_hp_dict['liquids tows'])+'hp')
                         }
+river_location_list = ['St. Louis','Wickliffe','Memphis','Vicksburg','Baton Rouge','New Orleans']
 river_stage_bench_years = 10 # past years to consider for river stage benchmarking
 tow_bench_years = 10 # past years to consider for freight rate benchmarking
 normal_stddev = 1.645 # standard deviations to consider "normal" (90%)
@@ -72,13 +73,20 @@ with st.spinner('Loading ...'):
     image_data = response['Body'].read()
     logo_image = Image.open(BytesIO(image_data))
     resize_logo = logo_image.resize([200,75])
-    tows_tab, eta_tab, exports_tab = st.tabs(["Lower MS transit", "MS river levels", "NOLA grain exports"])
-    with tows_tab:
-        left_col, right_col = st.columns([0.3, 0.7],gap = 'medium')
-        with left_col:
+    river_tab, eta_tab, unloads_tab, exports_tab = st.tabs(["MS river levels", "Lower MS tow transit",  "Predicted barge unloads", "Predicted NOLA grain exports"])
+    with river_tab:
+        river_left_col, river_right_col = st.columns([0.3, 0.7],gap = 'medium')
+        with river_left_col:
             st.image(resize_logo)
             st.subheader('User selections')
-            owner_type = st.selectbox('Select category',['main line grain tows','liquids tows', 'all tows'])
+            river_location = st.selectbox('Select river location',river_location_list)
+#            st.divider()
+    with eta_tab:
+        eta_left_col, eta_right_col = st.columns([0.3, 0.7],gap = 'medium')
+        with eta_left_col:
+            st.image(resize_logo)
+            st.subheader('User selections')
+            owner_type = st.selectbox('Select tow type category',['main line grain tows','liquids tows', 'all tows'])
 #            st.divider()
             st.write(collapsable_note_dict[owner_type])
             tow_hp_lower_lim = tow_min_hp_dict[owner_type]
@@ -96,10 +104,9 @@ with st.spinner('Loading ...'):
     # %% ETL river stage data
     river_data = dataframe_from_s3_csv(bucket_name,static_data_folder+river_stages_file)
     river_data = river_data.dropna(how = 'all')
-    river_data = river_data.rename(columns = {'Date / Time':'date','Stage (Ft)':'stage'})
+    river_data = river_data.rename(columns = {'Date':'date'})
     for col in river_data.columns:
         if not(col == 'date'):
-            river_data[col] = river_data[col].str.replace(',', '')
             river_data[col] = pd.to_numeric(river_data[col],errors='coerce')
     river_data['date'] = pd.to_datetime(river_data['date'])
     river_data = river_data.sort_values(by=['date'])
@@ -257,8 +264,8 @@ with st.spinner('Loading ...'):
     river_data_plot = river_data[(river_data['date']>start_date)]
     fig_r = go.Figure()
     river_dates_rev = river_data_plot.loc[::-1,'date']
-    river_norm_upper = river_data_plot['stage_mean']+normal_stddev*river_data_plot['stage_std']
-    river_norm_lower = river_data_plot['stage_mean']-normal_stddev*river_data_plot['stage_std']
+    river_norm_upper = river_data_plot[river_location+'_mean']+normal_stddev*river_data_plot[river_location+'_std']
+    river_norm_lower = river_data_plot[river_location+'_mean']-normal_stddev*river_data_plot[river_location+'_std']
     river_norm_lower = river_norm_lower[::-1] #this is a facet to create the filled line plot
     fig_r.add_trace(go.Scatter(
         x = pd.concat([river_data_plot['date'],river_dates_rev]),
@@ -271,7 +278,7 @@ with st.spinner('Loading ...'):
     ))
     fig_r.add_trace(go.Scatter(
         x = river_data_plot['date'],
-        y = river_data_plot['stage'], 
+        y = river_data_plot[river_location], 
         line_color='sienna',
         showlegend=True,
         name='River stage',
@@ -282,7 +289,7 @@ with st.spinner('Loading ...'):
         xaxis=dict(showgrid=False),
         yaxis=dict(showgrid=False),
         font=dict(color='#c0c0c0'),
-        title = (' Lower MS River Stage (Vicksburg Proxy)')
+        title = (river_location+' River Stage')
     )
     fig_r.update_yaxes(
         zerolinecolor='#4682b4',
@@ -301,13 +308,10 @@ with st.spinner('Loading ...'):
     tows_weekly_display = tows_weekly_display.rename(columns = {'downstream_bench_mean':'downstream benchmark',\
                                                                 'upstream_bench_mean':'upstream benchmark'})
 # %% Streamlit UI
-with tows_tab:
-    with right_col:
-        st.title('BargeAI(TM) - Lower MS River Intel')
-        st.subheader('River Level and Tow Traffic Charts')
-        #st.write('The plots show the number of tows headed downstream or upstream from Vicksburg, MS.\
-        #         The dashed line is the historic weekly average.')
-        st.plotly_chart(fig_r)
+with eta_tab:
+    with eta_right_col:
+        st.title('BargeAI:tm: Lower MS River Intel')
+        st.subheader('Tow Traffic Charts')
         st.plotly_chart(fig_d)
         st.plotly_chart(fig_u)
         st.divider()
@@ -315,7 +319,13 @@ with tows_tab:
         st.write('The tow counts in the table below correspond to the absolute totals for the week.')
         st.write(tows_weekly_abs.round(0))
         st.download_button('Download data', tows_weekly_abs.to_csv(index = False),file_name = 'tow_counts.csv') 
-with eta_tab:
+with river_tab:
+    with river_right_col:
+        st.title('BargeAI:tm: Lower MS River Intel')
+        st.subheader('River Levels')
+        st.plotly_chart(fig_r)
+        st.divider()
+with unloads_tab:
     st.header('Coming Soon!')
 with exports_tab:
     st.header('Coming Soon!')
