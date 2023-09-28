@@ -38,12 +38,19 @@ collapsable_note_dict = {'main line grain tows': ('Includes tows over '+str(tow_
                         'all tows': ('Includes all tows over '+str(tow_min_hp_dict['liquids tows'])+'hp')
                         }
 river_location_list = ['St. Louis','Wickliffe','Memphis','Vicksburg','Baton Rouge','New Orleans']
+river_plot_aliases = {'St. Louis':' St. Louis (Mel Price Lower)', 
+                      'Wickliffe': ' Cairo Area (Wickliffe, Ky)',
+                      'Memphis': ' Memphis',
+                      'Vicksburg': ' Vicksburg',
+                      'Baton Rouge': ' Baton Rouge',
+                      'New Orleans': ' New Orleans (Carrollton)'}
 usda_data_types = ['unloads-nola', 'barge-counts']
 usda_locks_fields = {'lock':['Ark Lock 1','Ohio Olmsted','Miss Locks 27'], #filtering criteria
                     'type':['Grain, Loaded'],
                     'direction':['Down']}
 river_stage_bench_years = 10 # past years to consider for river stage benchmarking
 tow_bench_years = 10 # past years to consider for freight rate benchmarking
+river_benchmark_years = [2022, 2019] # years to add as low water and high water benchmarks, repspectively
 usda_bench_years = 10 # past years to consider for usda data benchmarking
 normal_stddev = 1.645 # standard deviations to consider "normal" (90%)
 # %% Define functions
@@ -79,19 +86,19 @@ with st.spinner('Loading ...'):
     image_data = response['Body'].read()
     logo_image = Image.open(BytesIO(image_data))
     resize_logo = logo_image.resize([200,75])
-    river_tab, eta_tab, unloads_tab, exports_tab = st.tabs(["MS river levels", "Lower MS tow transit",  "Predicted + historic barge unloads", "Predicted NOLA grain exports"])
+    river_tab, transit_tab, eta_tab, unloads_tab, exports_tab = st.tabs(["MS river levels", "Lower MS tow transit", "Lower MS transit ETAs", "Grain barge lockings and unloads", "NOLA grain exports"])
     with river_tab:
         river_left_col, river_right_col = st.columns([0.3, 0.7],gap = 'medium')
         with river_left_col:
             st.image(resize_logo)
             # st.subheader('User selections')
             # river_location = st.selectbox('Select river location',river_location_list)
-    with eta_tab:
-        eta_left_col, eta_right_col = st.columns([0.3, 0.7],gap = 'medium')
-        with eta_left_col:
+    with transit_tab:
+        transit_left_col, transit_right_col = st.columns([0.3, 0.7],gap = 'medium')
+        with transit_left_col:
             st.image(resize_logo)
             st.subheader('User selections')
-            owner_type = st.selectbox('Select tow type category',['main line grain tows','liquids tows', 'all tows'])
+            owner_type = st.selectbox('Select tow type category',['main line grain tows','liquids tows'])
             st.write(collapsable_note_dict[owner_type])
             tow_hp_lower_lim = tow_min_hp_dict[owner_type]
     #       tow_hp_lower_lim = st.slider('Select minimum tow horsepower',value = 6500,min_value = 2000, max_value = 10000, step = 100)
@@ -320,7 +327,17 @@ with st.spinner('Loading ...'):
     fig_locks.add_trace(go.Scatter(
         x= locks_data_plot['date'],
         y= locks_data_plot['barge_count'], 
+        mode='lines+markers',  
         line_color='goldenrod',
+        marker=dict(  
+            symbol='circle',  
+            size=8,  
+            color='goldenrod',  
+            line=dict(  
+                color='black',  
+                width=1, 
+            ),
+        ),
         showlegend=True,
         name='Locking grain barges',
     ))
@@ -363,7 +380,17 @@ with st.spinner('Loading ...'):
     fig_unloads.add_trace(go.Scatter(
         x=unloads_data_plot['date'],
         y= unloads_data_plot['unloads'], 
+        mode='lines+markers',  
         line_color='salmon',
+        marker=dict(  # Define marker properties
+            symbol='circle',  # Set the marker symbol (you can choose other shapes)
+            size=8,  # Set the marker size
+            color='salmon',  # Set the marker color
+            line=dict(  # Define marker border properties
+                color='black',  # Set the border color
+                width=1,  # Set the border width
+            ),
+        ),
         showlegend=True,
         name='NOLA barge unloads',
     ))
@@ -392,8 +419,8 @@ with st.spinner('Loading ...'):
     tows_weekly_display = tows_weekly_display.rename(columns = {'downstream_bench_mean':'downstream benchmark',\
                                                                 'upstream_bench_mean':'upstream benchmark'})
 # %% Streamlit UI
-with eta_tab:
-    with eta_right_col:
+with transit_tab:
+    with transit_right_col:
         st.title('BargeAI:tm: Lower MS River Intel')
         st.subheader('Tow Traffic Charts')
         st.plotly_chart(fig_d)
@@ -406,14 +433,27 @@ with eta_tab:
 with river_tab:
     with river_right_col:
         st.title('BargeAI:tm: Lower MS River Intel')
-        st.subheader('River Levels')
+        st.subheader('River Levels - Interactive Plots')
         river_data_plot = river_data[(river_data['date']>start_date)]
+        date_today = pd.Timestamp.today()
+        start_date_low = pd.Timestamp(year = river_benchmark_years[0],month=start_date.month,day = start_date.day)
+        end_date_low = pd.Timestamp(year = river_benchmark_years[0],month=date_today.month,day = date_today.day)
+        start_date_hi = pd.Timestamp(year = river_benchmark_years[1],month=start_date.month,day = start_date.day)
+        end_date_hi = pd.Timestamp(year = river_benchmark_years[1],month=date_today.month,day = date_today.day)
+        river_data_low = river_data[((river_data['date']>start_date_low)&(river_data['date']<=end_date_low))]
+        river_data_hi = river_data[((river_data['date']>start_date_hi)&(river_data['date']<=end_date_hi))]
+        offset_years_low = start_date.year - start_date_low.year 
+        offset_years_hi = start_date.year - start_date_hi.year 
+        plot_date_low = river_data_low['date']+pd.DateOffset(years=offset_years_low)
+        plot_date_hi = river_data_hi['date']+pd.DateOffset(years=offset_years_hi)
+
         for river_location in river_location_list:
             fig_r = go.Figure()
             river_dates_rev = river_data_plot.loc[::-1,'date']
             river_norm_upper = river_data_plot[river_location+'_mean']+normal_stddev*river_data_plot[river_location+'_std']
             river_norm_lower = river_data_plot[river_location+'_mean']-normal_stddev*river_data_plot[river_location+'_std']
             river_norm_lower = river_norm_lower[::-1] #this is a facet to create the filled line plot
+            
             fig_r.add_trace(go.Scatter(
                 x = pd.concat([river_data_plot['date'],river_dates_rev]),
                 y = pd.concat([river_norm_upper,river_norm_lower]), 
@@ -428,7 +468,30 @@ with river_tab:
                 y = river_data_plot[river_location], 
                 line_color='goldenrod',
                 showlegend=True,
-                name='River stage',
+                name='Current river stage',
+            ))
+            fig_r.add_trace(go.Scatter(
+                x = plot_date_low,
+                y = river_data_low[river_location], 
+                line=dict(
+                    color='cyan',
+                    width = 1,  # Set the width to your desired value
+                ),
+                line_dash='dash',
+                showlegend=True,
+                name='Low water ref '+str(river_benchmark_years[0]),
+            ))
+
+            fig_r.add_trace(go.Scatter(
+                x = plot_date_hi,
+                y = river_data_hi[river_location], 
+                line=dict(
+                    color='paleturquoise',
+                    width = 1,  # Set the width to your desired value
+                ),
+                line_dash='dash',
+                showlegend=True,
+                name='High water ref '+str(river_benchmark_years[1]),
             ))
             fig_r.update_layout(
                 plot_bgcolor='black', 
@@ -436,7 +499,7 @@ with river_tab:
                 xaxis=dict(showgrid=False),
                 yaxis=dict(showgrid=False),
                 font=dict(color='#c0c0c0'),
-                title = (river_location+' River Stage')
+                title = (river_plot_aliases[river_location]+' River Stage')
             )
             fig_r.update_yaxes(
                 zeroline=False,
@@ -452,11 +515,13 @@ with river_tab:
 with unloads_tab:
     with unloads_right_col:
         st.title('BargeAI:tm: Lower MS River Intel')
-        st.subheader('USDA Barge Unloads Predictions')
+        st.subheader('USDA Barge Unloads Predictions (Beta)')
         st.dataframe(pd.DataFrame(unloads_predictions,index = [0]),hide_index=True)
         st.divider()
         st.subheader('USDA Locks Data and NOLA Unloads - Downstream Grain Barges')
         st.plotly_chart(fig_locks)
         st.plotly_chart(fig_unloads)
+with eta_tab:
+    st.header('Coming Soon!')
 with exports_tab:
     st.header('Coming Soon!')
