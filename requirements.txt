@@ -6,4 +6,3 @@ Pillow
 plotly
 streamlit_authenticator
 yaml
-awswrangler
