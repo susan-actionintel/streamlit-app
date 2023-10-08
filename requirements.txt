@@ -4,3 +4,4 @@ numpy
 boto3
 Pillow
 plotly
+streamlit_authenticator
